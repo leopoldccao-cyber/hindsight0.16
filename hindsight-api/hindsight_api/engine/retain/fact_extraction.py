@@ -8,6 +8,7 @@ Uses the LLMConfig wrapper for all LLM calls.
 import asyncio
 import json
 import logging
+import os
 import re
 from datetime import datetime, timedelta
 from typing import Literal
@@ -451,6 +452,18 @@ entities 用于把相关事实连起来。请尽量抽取：
 ❌ 只抽取 ["user","Emily"]，漏掉能关联主题的概念
 
 ══════════════════════════════════════════════════════════════════════════
+══════════════════════════════════════════════════════════════════════════
+causal_relations（可选：因果链接，严禁乱写索引）
+══════════════════════════════════════════════════════════════════════════
+- causal_relations 可以为 [] 或 null；不确定就留空。
+- target_fact_index 必须是整数，并且必须落在 [0, N-1]，其中 N = 你本次输出的 facts 数组长度。
+- 只允许引用“已经在 facts 数组中出现过”的事实：target_fact_index 必须 < 当前事实在 facts 数组中的索引。
+  说明：如果你想表达“事实A 导致 事实B”，请在 B 的 causal_relations 里写：
+  {{"target_fact_index": A 的索引, "relation_type": "caused_by", "strength": 0.0~1.0}}
+  不要在 A 上写指向未来事实 B 的关系（容易导致索引错误/越界）。
+- 不要指向自己：target_fact_index 不能等于当前事实索引。
+- 每条事实最多写 2 条因果关系，宁缺毋滥；没有明确因果就不要写。
+
 示例
 ══════════════════════════════════════════════════════════════════════════
 示例1（world；事件日期：2024-06-10（周二））：
@@ -683,16 +696,34 @@ entities 用于把相关事实连起来。请尽量抽取：
                         fact_data["entities"] = validated_entities
 
                 # Add causal relations if present (validate as CausalRelation objects)
-                # Filter out invalid relations (missing required fields)
+                # Filter out invalid relations:
+                # - must have required fields
+                # - target_fact_index must be within [0, len(raw_facts)-1]
+                # - only allow linking to earlier facts in this same LLM response (target_fact_index < i)
                 causal_relations = get_value("causal_relations")
                 if causal_relations:
                     validated_relations = []
+                    max_idx = len(raw_facts) - 1  # raw_facts is the LLM's facts array for this chunk
                     for rel in causal_relations:
-                        if isinstance(rel, dict) and "target_fact_index" in rel and "relation_type" in rel:
-                            try:
-                                validated_relations.append(CausalRelation.model_validate(rel))
-                            except Exception as e:
-                                logger.warning(f"Invalid causal relation {rel}: {e}")
+                        if not (isinstance(rel, dict) and "target_fact_index" in rel and "relation_type" in rel):
+                            continue
+                        try:
+                            rel_obj = CausalRelation.model_validate(rel)
+                        except Exception as e:
+                            logger.warning(f"Invalid causal relation {rel}: {e}")
+                            continue
+                
+                        t = rel_obj.target_fact_index
+                        if not isinstance(t, int) or t < 0 or t > max_idx or t >= i:
+                            # Drop silently; we also sanitize later after compaction.
+                            logger.debug(
+                                f"Dropped causal relation with invalid/forward target_fact_index={t} "
+                                f"(fact_index={i}, max_idx={max_idx})"
+                            )
+                            continue
+                
+                        validated_relations.append(rel_obj)
+                
                     if validated_relations:
                         fact_data["causal_relations"] = validated_relations
 
@@ -714,6 +745,96 @@ entities 用于把相关事实连起来。请尽量抽取：
                     f"Got {len(raw_facts) - len(chunk_facts)} malformed facts out of {len(raw_facts)} on attempt {attempt + 1}/{max_retries}. Retrying..."
                 )
                 continue
+            # Sanitize causal_relations to match the final (compacted) chunk_facts list.
+            # The LLM may reference indices from the raw list (or use 1-based indices). After we drop malformed
+            # facts, indices can drift; link_utils would otherwise warn and drop them later.
+            debug_causal = False
+            try:
+                debug_causal = os.getenv("HINDSIGHT_DEBUG_CAUSAL", "0") == "1"
+            except Exception:
+                debug_causal = False
+
+            if chunk_facts:
+                # Gather stats before cleaning
+                total_rels_before = 0
+                all_targets: list[int] = []
+                example_rels: list[str] = []
+                for _j, _f in enumerate(chunk_facts):
+                    _rels = getattr(_f, "causal_relations", None)
+                    if not _rels:
+                        continue
+                    for _r in _rels:
+                        total_rels_before += 1
+                        _t = getattr(_r, "target_fact_index", None)
+                        _rt = getattr(_r, "relation_type", None)
+                        if isinstance(_t, int):
+                            all_targets.append(_t)
+                        if debug_causal and len(example_rels) < 5:
+                            example_rels.append(f"fact={_j} -> target={_t} type={_rt}")
+
+                # Detect common 1-based indexing pattern
+                one_based = False
+                if all_targets:
+                    try:
+                        if 0 not in all_targets and min(all_targets) >= 1 and max(all_targets) == len(chunk_facts):
+                            one_based = True
+                    except Exception:
+                        one_based = False
+
+                if debug_causal:
+                    if total_rels_before == 0:
+                        logger.info(
+                            f"[CAUSAL_DEBUG] chunk_facts={len(chunk_facts)}; no causal_relations produced by LLM"
+                        )
+                    else:
+                        tgt_min = min(all_targets) if all_targets else None
+                        tgt_max = max(all_targets) if all_targets else None
+                        logger.info(
+                            f"[CAUSAL_DEBUG] chunk_facts={len(chunk_facts)}; causal_relations_before={total_rels_before}; "
+                            f"targets_min={tgt_min} targets_max={tgt_max} one_based={one_based}"
+                        )
+                        if example_rels:
+                            logger.info(f"[CAUSAL_DEBUG] examples: " + " | ".join(example_rels))
+
+                # Clean with detailed drop reasons
+                dropped_non_int = 0
+                dropped_oob = 0
+                dropped_forward_or_self = 0
+                kept = 0
+
+                for j, f in enumerate(chunk_facts):
+                    rels = getattr(f, "causal_relations", None)
+                    if not rels:
+                        continue
+                    cleaned = []
+                    for rel in rels:
+                        t = getattr(rel, "target_fact_index", None)
+                        if one_based and isinstance(t, int):
+                            t = t - 1
+                            rel = rel.model_copy(update={"target_fact_index": t})
+
+                        if not isinstance(t, int):
+                            dropped_non_int += 1
+                            continue
+                        if t < 0 or t >= len(chunk_facts):
+                            dropped_oob += 1
+                            continue
+                        # Keep only backward links (target must be an earlier fact index); drop self/forward
+                        if t >= j:
+                            dropped_forward_or_self += 1
+                            continue
+
+                        cleaned.append(rel)
+                        kept += 1
+
+                    if cleaned != rels:
+                        chunk_facts[j] = f.model_copy(update={"causal_relations": cleaned})
+
+                if debug_causal and total_rels_before > 0:
+                    logger.info(
+                        f"[CAUSAL_DEBUG] causal_relations_after={kept}; dropped_non_int={dropped_non_int} "
+                        f"dropped_oob={dropped_oob} dropped_forward_or_self={dropped_forward_or_self}"
+                    )
 
             return chunk_facts
 
@@ -983,6 +1104,7 @@ async def extract_facts_from_contents(
         fact_idx_in_content = 0
         for chunk_idx_in_content, (chunk_text, chunk_fact_count) in enumerate(chunks_from_llm):
             chunk_global_idx = chunk_start_idx + chunk_idx_in_content
+            chunk_fact_start_global_idx = global_fact_idx 
 
             for _ in range(chunk_fact_count):
                 if fact_idx_in_content < len(facts_from_llm):
@@ -1002,7 +1124,7 @@ async def extract_facts_from_contents(
                         if fact_from_llm.occurred_end
                         else None,
                         causal_relations=_convert_causal_relations(
-                            fact_from_llm.causal_relations or [], global_fact_idx
+                            fact_from_llm.causal_relations or [], chunk_fact_start_global_idx
                         ),
                         content_index=content_index,
                         chunk_index=chunk_global_idx,
