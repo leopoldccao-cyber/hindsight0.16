@@ -26,7 +26,7 @@ def _sanitize_text(text: str) -> str:
     from improperly decoded data (e.g., from JavaScript or broken files).
 
     This function removes unpaired surrogates to prevent UnicodeEncodeError
-    when the text is sent to the LLM API.
+    when the text is sent to the LLM 接口.
     """
     if not text:
         return text
@@ -39,7 +39,7 @@ class Entity(BaseModel):
     """An entity extracted from text."""
 
     text: str = Field(
-        description="The specific, named entity as it appears in the fact. Must be a proper noun or specific identifier."
+        description="事实中出现的具体命名实体文本。必须是专有名词或明确的特定标识符（人名/组织名/产品名/项目名/地名等），保持原文不翻译。"
     )
 
 
@@ -52,8 +52,8 @@ class Fact(BaseModel):
     """
 
     # Required fields
-    fact: str = Field(description="Combined fact text: what | when | where | who | why")
-    fact_type: Literal["world", "experience", "opinion"] = Field(description="Perspective: world/experience/opinion")
+    fact: str = Field(description="合并后的事实文本：what | when | where | who | why（内容用中文，专有名词保留原文；键名不要翻译）")
+    fact_type: Literal["world", "experience", "opinion"] = Field(description="视角：world / experience / opinion（枚举值不要翻译）")
 
     # Optional temporal fields
     occurred_start: str | None = None
@@ -62,7 +62,7 @@ class Fact(BaseModel):
 
     # Optional location field
     where: str | None = Field(
-        None, description="WHERE the fact occurred or is about (specific location, place, or area)"
+        None, description="地点：事实发生或所指地点（具体位置/场所/区域）"
     )
 
     # Optional structured data
@@ -74,18 +74,18 @@ class CausalRelation(BaseModel):
     """Causal relationship between facts."""
 
     target_fact_index: int = Field(
-        description="Index of the related fact in the facts array (0-based). "
+        description="关联事实在 facts 数组中的索引（从 0 开始）。"
         "This creates a directed causal link to another fact in the extraction."
     )
     relation_type: Literal["causes", "caused_by", "enables", "prevents"] = Field(
-        description="Type of causal relationship: "
+        description="因果关系类型："
         "'causes' = this fact directly causes the target fact, "
         "'caused_by' = this fact was caused by the target fact, "
         "'enables' = this fact enables/allows the target fact, "
         "'prevents' = this fact prevents/blocks the target fact"
     )
     strength: float = Field(
-        description="Strength of causal relationship (0.0 to 1.0). "
+        description="因果关系强度（0.0 到 1.0）。"
         "1.0 = direct/strong causation, 0.5 = moderate, 0.3 = weak/indirect",
         ge=0.0,
         le=1.0,
@@ -106,44 +106,44 @@ class ExtractedFact(BaseModel):
     # ==========================================================================
 
     what: str = Field(
-        description="WHAT happened - COMPLETE, DETAILED description with ALL specifics. "
-        "NEVER summarize or omit details. Include: exact actions, objects, quantities, specifics. "
-        "BE VERBOSE - capture every detail that was mentioned. "
-        "Example: 'Emily got married to Sarah at a rooftop garden ceremony with 50 guests attending and a live jazz band playing' "
-        "NOT: 'A wedding happened' or 'Emily got married'"
+        description="发生了什么：必须完整、极度详细，包含所有具体细节。"
+        "绝不要总结或省略细节。 包括： 具体动作、对象、数量、细节。 "
+        "务必详细 - 把提到的细节全写上。 "
+        "示例：'Emily 和 Sarah 在屋顶花园举办婚礼，50 名宾客参加，并有现场爵士乐队演奏' "
+        "不要：'只说发生了婚礼' 或 'Emily 结婚了'"
     )
 
     when: str = Field(
-        description="WHEN it happened - ALWAYS include temporal information if mentioned. "
-        "Include: specific dates, times, durations, relative time references. "
+        description="什么时候发生：如果文本提到时间信息，必须写入（并按要求含周X）。"
+        "包括： specific dates, times, durations, relative time references. "
         "Examples: 'on June 15th, 2024 at 3pm', 'last weekend', 'for the past 3 years', 'every morning at 6am'. "
         "Write 'N/A' ONLY if absolutely no temporal context exists. Prefer converting to absolute dates when possible."
     )
 
     where: str = Field(
-        description="WHERE it happened or is about - SPECIFIC locations, places, areas, regions if applicable. "
-        "Include: cities, neighborhoods, venues, buildings, countries, specific addresses when mentioned. "
-        "Examples: 'downtown San Francisco at a rooftop garden venue', 'at the user's home in Brooklyn', 'online via Zoom', 'Paris, France'. "
+        description="在哪里发生/所指：尽量给出具体地点（位置/场所/区域/城市等）。"
+        "包括： cities, neighborhoods, venues, buildings, countries, specific addresses when mentioned. "
+        "Examples: 'downtown San Francisco at a 屋顶花园 venue', 'at the user's home in Brooklyn', 'online via Zoom', 'Paris, France'. "
         "Write 'N/A' ONLY if absolutely no location context exists or if the fact is completely location-agnostic."
     )
 
     who: str = Field(
-        description="WHO is involved - ALL people/entities with FULL context and relationships. "
-        "Include: names, roles, relationships to user, background details. "
-        "Resolve coreferences (if 'my roommate' is later named 'Emily', write 'Emily, the user's college roommate'). "
-        "BE DETAILED about relationships and roles. "
-        "Example: 'Emily (user's college roommate from Stanford, now works at Google), Sarah (Emily's partner of 5 years, software engineer)' "
-        "NOT: 'my friend' or 'Emily and Sarah'"
+        description="涉及谁：列出所有相关的人/实体，并写清上下文与关系。"
+        "包括：姓名、角色、与用户的关系、背景信息。 "
+        "解决指代/代词指向（例如：如果后文把“我的室友”明确为 'Emily'，就写成 'Emily（用户的大学室友）'）。 "
+        "关系与角色要写细（谁是谁、怎么认识、什么关系）。 "
+        "示例：'Emily（用户的大学室友，就读 Stanford，现在在 Google 工作），Sarah（Emily 交往 5 年的伴侣，软件工程师）' "
+        "不要：'我的朋友' 或 'Emily 和 Sarah'"
     )
 
     why: str = Field(
-        description="WHY it matters - ALL emotional, contextual, and motivational details. "
+        description="为什么重要：写出所有情绪、语境与动机相关的细节。"
         "Include EVERYTHING: feelings, preferences, motivations, observations, context, background, significance. "
-        "BE VERBOSE - capture all the nuance and meaning. "
+        "务必详细 - capture all the nuance and meaning. "
         "FOR ASSISTANT FACTS: MUST include what the user asked/requested that led to this interaction! "
-        "Example (world): 'The user felt thrilled and inspired, has always dreamed of an outdoor ceremony, mentioned wanting a similar garden venue, was particularly moved by the intimate atmosphere and personal vows' "
-        "Example (assistant): 'User asked how to fix slow API performance with 1000+ concurrent users, expected 70-80% reduction in database load' "
-        "NOT: 'User liked it' or 'To help user'"
+        "Example (world): 'The user felt thrilled and inspired, has always dreamed of an 户外仪式, mentioned wanting a similar garden venue, was particularly moved by the intimate atmosphere and personal vows' "
+        "Example (assistant): 'User asked how to fix slow 接口 performance with 1000+ concurrent users, expected 70-80% reduction in database load' "
+        "不要：'用户喜欢它' 或 '为了帮助用户'"
     )
 
     # ==========================================================================
@@ -152,32 +152,32 @@ class ExtractedFact(BaseModel):
 
     fact_kind: str = Field(
         default="conversation",
-        description="'event' = specific datable occurrence (set occurred dates), 'conversation' = general info (no occurred dates)",
+        description="'event' = 具体可定位日期的事件（要设置 occurred_*），'conversation' = 一般性信息（occurred_* 为空）",
     )
 
     # Temporal fields - optional
     occurred_start: str | None = Field(
         default=None,
-        description="WHEN the event happened (ISO timestamp). Only for fact_kind='event'. Leave null for conversations.",
+        description="事件发生时间（ISO 时间戳）。仅用于 fact_kind='event'。对话类留空（null）。",
     )
     occurred_end: str | None = Field(
         default=None,
-        description="WHEN the event ended (ISO timestamp). Only for events with duration. Leave null for conversations.",
+        description="事件结束时间（ISO 时间戳）。仅用于有持续时间的事件。对话类留空（null）。",
     )
 
     # Classification (CRITICAL - required)
     # Note: LLM uses "assistant" but we convert to "bank" for storage
     fact_type: Literal["world", "assistant"] = Field(
-        description="'world' = about the user/others (background, experiences). 'assistant' = experience with the assistant."
+        description="'world' = 关于用户/他人（背景、经历等）。'assistant' = 与助手相关的经历。"
     )
 
     # Entities - extracted from fact content
     entities: list[Entity] | None = Field(
         default=None,
-        description="Named entities, objects, AND abstract concepts from the fact. Include: people names, organizations, places, significant objects (e.g., 'coffee maker', 'car'), AND abstract concepts/themes (e.g., 'friendship', 'career growth', 'loss', 'celebration'). Extract anything that could help link related facts together.",
+        description="从事实中抽取命名实体、物体以及抽象概念（尽量全）。任何有助于把相关事实串联起来的关键词都可以放进来。",
     )
     causal_relations: list[CausalRelation] | None = Field(
-        default=None, description="Causal links to other facts. Can be null."
+        default=None, description="与其他事实的因果链接。可为 null。"
     )
 
     @field_validator("entities", mode="before")
@@ -202,7 +202,7 @@ class ExtractedFact(BaseModel):
 
         # Add 'who' if not N/A
         if self.who and self.who.upper() != "N/A":
-            parts.append(f"Involving: {self.who}")
+            parts.append(f"涉及：{self.who}")
 
         # Add 'why' if not N/A
         if self.why and self.why.upper() != "N/A":
@@ -217,7 +217,7 @@ class ExtractedFact(BaseModel):
 class FactExtractionResponse(BaseModel):
     """Response containing all extracted facts."""
 
-    facts: list[ExtractedFact] = Field(description="List of extracted factual statements")
+    facts: list[ExtractedFact] = Field(description="抽取到的事实列表")
 
 
 def chunk_text(text: str, max_chars: int) -> list[str]:
@@ -331,210 +331,189 @@ async def _extract_facts_from_chunk(
     # Note: We use "assistant" in the prompt but convert to "bank" for storage
     if extract_opinions:
         # Opinion extraction uses a separate prompt (not this one)
-        fact_types_instruction = "Extract ONLY 'opinion' type facts (formed opinions, beliefs, and perspectives). DO NOT extract 'world' or 'assistant' facts."
+        fact_types_instruction = "仅抽取 fact_type 为 'opinion' 的事实（已形成的观点、信念、立场）。不要抽取 'world' 或 'assistant' 类型的事实。"
     else:
         fact_types_instruction = (
-            "Extract ONLY 'world' and 'assistant' type facts. DO NOT extract opinions - those are extracted separately."
+            "仅抽取 fact_type 为 'world' 与 'assistant' 的事实。不要抽取观点（opinions）——观点会在单独步骤中抽取。"
         )
 
-    prompt = f"""Extract facts from text into structured format with FOUR required dimensions - BE EXTREMELY DETAILED.
+    prompt = f"""请从文本中抽取事实，并以结构化 JSON 输出。要求：**极度详细**，宁可多写，不要漏写。
 
 {fact_types_instruction}
 
-
+══════════════════════════════════════════════════════════════════════════
+语言要求（必须遵守）
+══════════════════════════════════════════════════════════════════════════
+- 输出字段 what / when / where / who / why 的内容必须使用**简体中文**。
+- 但其中出现的**人名、组织名、产品名、项目名、地名等专有名词**必须保持原文，不要翻译或音译（例如：Emily、Sarah、Google、Redis、Zoom）。
+- 不要翻译 JSON 键名、枚举值（fact_type、fact_kind、relation_type 等）、ISO 时间戳、UUID/ID、代码片段、URL。
 
 ══════════════════════════════════════════════════════════════════════════
-FACT FORMAT - ALL FIVE DIMENSIONS REQUIRED - MAXIMUM VERBOSITY
+事实格式（五个维度全部必填，越详细越好）
 ══════════════════════════════════════════════════════════════════════════
+对每一条事实，都必须完整填写并覆盖所有细节，**禁止概括/省略**：
 
-For EACH fact, CAPTURE ALL DETAILS - NEVER SUMMARIZE OR OMIT:
+1. **what**：发生了什么（包含具体动作、对象、数量、细节、结果）
+2. **when**：什么时候发生（如果文本提到任何时间线索必须写；包含日期/时间/时长/频率/相对时间）
+   - when 字段必须包含星期信息，使用中文：周一、周二、周三、周四、周五、周六、周日
+   - 推荐格式：YYYY-MM-DD（周X）；如有具体时间：YYYY-MM-DD HH:MM（周X）
+   - 只有在完全没有任何时间线索时才写 "N/A"
+3. **where**：在哪里发生/涉及哪里（尽量具体：城市/区域/场所/线上平台/建筑/国家/地址）
+   - 只有在完全没有任何地点线索时才写 "N/A"
+4. **who**：涉及哪些人/实体（尽量写清名字、身份、角色关系、背景；指代要消解）
+5. **why**：为什么重要（动机、情绪、偏好、意义、背景、影响、细微语气与上下文）
+   - 对 assistant 类型事实：why 必须包含“用户当时问了什么/要解决什么问题/期待什么结果”。
 
-1. **what**: WHAT happened - COMPLETE description with ALL specifics (objects, actions, quantities, details)
-2. **when**: WHEN it happened - ALWAYS include temporal info with DAY OF WEEK (e.g., "Monday, June 10, 2024")
-   - Always include the day name: Monday, Tuesday, Wednesday, Thursday, Friday, Saturday, Sunday
-   - Format: "day_name, month day, year" (e.g., "Saturday, June 9, 2024")
-3. **where**: WHERE it happened or is about - SPECIFIC locations, places, areas, regions (if applicable)
-4. **who**: WHO is involved - ALL people/entities with FULL relationships and background
-5. **why**: WHY it matters - ALL emotions, preferences, motivations, significance, nuance
-   - For assistant facts: MUST include what the user asked/requested that triggered this!
+此外还要输出：fact_type、fact_kind、entities、causal_relations、occurred_start/occurred_end（仅 event 时需要），以及 where（如你能给出结构化地点）。
 
-Plus: fact_type, fact_kind, entities, occurred_start/end (for structured dates), where (structured location)
-
-VERBOSITY REQUIREMENT: Include EVERY detail mentioned. More detail is ALWAYS better than less.
-
-══════════════════════════════════════════════════════════════════════════
-COREFERENCE RESOLUTION (CRITICAL)
-══════════════════════════════════════════════════════════════════════════
-
-When text uses BOTH a generic relation AND a name for the same person → LINK THEM!
-
-Example input: "I went to my college roommate's wedding last June. Emily finally married Sarah after 5 years together."
-
-CORRECT output:
-- what: "Emily got married to Sarah at a rooftop garden ceremony"
-- when: "Saturday, June 8, 2024, after dating for 5 years"
-- where: "downtown San Francisco, at a rooftop garden venue"
-- who: "Emily (user's college roommate), Sarah (Emily's partner of 5 years)"
-- why: "User found it romantic and beautiful, dreams of similar outdoor ceremony"
-- where (structured): "San Francisco"
-
-WRONG output:
-- what: "User's roommate got married" ← LOSES THE NAME!
-- who: "the roommate" ← WRONG - use the actual name!
-- where: (missing) ← WRONG - include the location!
+详细度要求：只要文本里提到过，就尽量写进去。**多写永远比少写好。**
 
 ══════════════════════════════════════════════════════════════════════════
-FACT_KIND CLASSIFICATION (CRITICAL FOR TEMPORAL HANDLING)
+指代消解（非常重要）
 ══════════════════════════════════════════════════════════════════════════
+当文本同时出现“泛称关系”和“具体姓名”指向同一人时，必须把它们链接起来，输出时用姓名并补充关系。
 
-⚠️ MUST set fact_kind correctly - this determines whether occurred_start/end are set!
+示例输入：
+“我上个月参加了我大学室友的婚礼。Emily 终于和交往 5 年的 Sarah 结婚了。”
 
-fact_kind="event" - USE FOR:
-- Actions that happened at a specific time: "went to", "attended", "visited", "bought", "made"
-- Past events: "yesterday I...", "last week...", "in March 2020..."
-- Future plans with dates: "will go to", "scheduled for"
-- Examples: "I went to a pottery workshop" → event
-           "Alice visited Paris in February" → event
-           "I bought a new car yesterday" → event
-           "The user graduated from MIT in March 2020" → event
+正确输出（示意）：
+- what：Emily 与 Sarah 在露台花园举办婚礼（包含细节）
+- when：相对 事件日期 解析为具体日期（并含周X）
+- where：具体城市/场地（如提到）
+- who：Emily（用户的大学室友），Sarah（Emily 交往 5 年的伴侣）
+- why：用户的感受/偏好/意义（如文本体现）
 
-fact_kind="conversation" - USE FOR:
-- Ongoing states: "works as", "lives in", "is married to"
-- Preferences: "loves", "prefers", "enjoys"
-- Traits/abilities: "speaks fluent French", "knows Python"
-- Examples: "I love Italian food" → conversation
-           "Alice works at Google" → conversation
-           "I prefer outdoor dining" → conversation
+错误输出（不要这样）：
+- what：“用户的室友结婚了”（丢掉姓名）
+- who：“室友”（没有用真实姓名）
+- where 缺失（明明有地点线索却没写）
 
 ══════════════════════════════════════════════════════════════════════════
-TEMPORAL HANDLING (CRITICAL - USE EVENT DATE AS REFERENCE)
+fact_kind 分类（决定是否要写 occurred_start/end）
 ══════════════════════════════════════════════════════════════════════════
+⚠️ 必须正确设置 fact_kind，否则时间字段会出错。
 
-⚠️ IMPORTANT: Use the "Event Date" provided in the input as your reference point!
-All relative dates ("yesterday", "last week", "recently") must be resolved relative to the Event Date, NOT today's date.
+fact_kind="event" 适用于：
+- 可定位到某个时间点/时间段的行动或事件：去了、参加了、买了、完成了、发生了……
+- 过去事件：“昨天…/上周…/2020 年 3 月…”
+- 带日期的未来计划：“将于…/已预约…/定在…”
+例： “我昨天买了新车” → event
 
-For EVENTS (fact_kind="event") - MUST SET BOTH occurred_start AND occurred_end:
-- Convert relative dates → absolute using Event Date as reference
-- If Event Date is "Saturday, March 15, 2020", then "yesterday" = Friday, March 14, 2020
-- Dates mentioned in text (e.g., "in March 2020") should use THAT year, not current year
-- Always include the day name (Monday, Tuesday, etc.) in the 'when' field
-- Set occurred_start AND occurred_end to WHEN IT HAPPENED (not when mentioned)
-- For single-day/point events: set occurred_end = occurred_start (same timestamp)
-
-For CONVERSATIONS (fact_kind="conversation"):
-- General info, preferences, ongoing states → NO occurred dates
-- Examples: "loves coffee", "works as engineer"
+fact_kind="conversation" 适用于：
+- 持续状态：工作于、住在、已婚、正在学习……
+- 偏好：喜欢、讨厌、更偏向……
+- 特质/能力：会 Python、法语流利、做事细致……
+例： “我喜欢意大利菜” → conversation
 
 ══════════════════════════════════════════════════════════════════════════
-FACT TYPE
+时间处理（关键：以输入中的 事件日期 为参照）
 ══════════════════════════════════════════════════════════════════════════
+⚠️ 重要：所有相对时间（“昨天/上周/最近/刚刚/上个月”）都必须相对于 **事件日期** 解析，而不是“今天”。
 
-- **world**: User's life, other people, events (would exist without this conversation)
-- **assistant**: Interactions with assistant (requests, recommendations, help)
-  ⚠️ CRITICAL for assistant facts: ALWAYS capture the user's request/question in the fact!
-  Include: what the user asked, what problem they wanted solved, what context they provided
+对 事件（fact_kind="event"）：
+- 必须设置 occurred_start 与 occurred_end
+- 把相对时间换算为绝对日期（以 事件日期 为参照）
+- occurred_start/end 表示“事件发生时刻”，不是“被提到的时刻”
+- 点事件：occurred_end = occurred_start（同一时间戳）
 
-══════════════════════════════════════════════════════════════════════════
-USER PREFERENCES (CRITICAL)
-══════════════════════════════════════════════════════════════════════════
-
-ALWAYS extract user preferences as separate facts! Watch for these keywords:
-- "enjoy", "like", "love", "prefer", "hate", "dislike", "favorite", "ideal", "dream", "want"
-
-Example: "I love Italian food and prefer outdoor dining"
-→ Fact 1: what="User loves Italian food", who="user", why="This is a food preference", entities=["user"]
-→ Fact 2: what="User prefers outdoor dining", who="user", why="This is a dining preference", entities=["user"]
+对 对话（fact_kind="conversation"）：
+- 偏好/常识/长期状态等一般不设置 occurred_*（保持 null）
 
 ══════════════════════════════════════════════════════════════════════════
-ENTITIES - INCLUDE PEOPLE, PLACES, OBJECTS, AND CONCEPTS (CRITICAL)
+fact_type（视角）
 ══════════════════════════════════════════════════════════════════════════
-
-Extract entities that help link related facts together. Include:
-1. "user" - when the fact is about the user
-2. People names - Emily, Dr. Smith, etc.
-3. Organizations/Places - IKEA, Goodwill, New York, etc.
-4. Specific objects - coffee maker, toaster, car, laptop, kitchen, etc.
-5. Abstract concepts - themes, values, emotions, or ideas that capture the essence of the fact:
-   - "friendship" for facts about friends helping each other, bonding, loyalty
-   - "career growth" for facts about promotions, learning new skills, job changes
-   - "loss" or "grief" for facts about death, endings, saying goodbye
-   - "celebration" for facts about parties, achievements, milestones
-   - "trust" or "betrayal" for facts involving those themes
-
-✅ CORRECT: entities=["user", "coffee maker", "Goodwill", "kitchen"] for "User donated their coffee maker to Goodwill"
-✅ CORRECT: entities=["user", "Emily", "friendship"] for "Emily helped user move to a new apartment"
-✅ CORRECT: entities=["user", "promotion", "career growth"] for "User got promoted to senior engineer"
-✅ CORRECT: entities=["user", "grandmother", "loss", "grief"] for "User's grandmother passed away last week"
-❌ WRONG: entities=["user", "Emily"] only - missing the "friendship" concept that links to other friendship facts!
+- fact_type="world"：关于用户/他人/世界的事实（即使没有这段对话也会存在）
+- fact_type="assistant"：与助手的互动事实（用户提问、助手建议、协助解决问题）
+  ⚠️ 对 assistant：必须把用户的请求/问题写进 why（用户想解决什么、给了什么上下文、期待什么结果）。
 
 ══════════════════════════════════════════════════════════════════════════
-EXAMPLES
+用户偏好（必须单独抽取）
 ══════════════════════════════════════════════════════════════════════════
+看到以下倾向词就要单独成事实：喜欢/讨厌/偏好/最爱/理想/想要/梦想/不喜欢/更愿意……
 
-Example 1 - World Facts (Event Date: Tuesday, June 10, 2024):
-Input: "I'm planning my wedding and want a small outdoor ceremony. I just got back from my college roommate Emily's wedding - she married Sarah at a rooftop garden, it was so romantic!"
-
-Output facts:
-
-1. User's wedding preference
-   - what: "User wants a small outdoor ceremony for their wedding"
-   - who: "user"
-   - why: "User prefers intimate outdoor settings"
-   - fact_type: "world", fact_kind: "conversation"
-   - entities: ["user", "wedding", "outdoor ceremony"]
-
-2. User planning wedding
-   - what: "User is planning their own wedding"
-   - who: "user"
-   - why: "Inspired by Emily's ceremony"
-   - fact_type: "world", fact_kind: "conversation"
-   - entities: ["user", "wedding"]
-
-3. Emily's wedding (THE EVENT - note occurred_start AND occurred_end both set)
-   - what: "Emily got married to Sarah at a rooftop garden ceremony in the city"
-   - who: "Emily (user's college roommate), Sarah (Emily's partner)"
-   - why: "User found it romantic and beautiful"
-   - fact_type: "world", fact_kind: "event"
-   - occurred_start: "2024-06-09T00:00:00Z" (recently, user "just got back" - relative to Event Date June 10, 2024)
-   - occurred_end: "2024-06-09T23:59:59Z" (same day - point event)
-   - entities: ["user", "Emily", "Sarah", "wedding", "rooftop garden"]
-
-Example 2 - Assistant Facts (Context: March 5, 2024):
-Input: "User: My API is really slow when we have 1000+ concurrent users. What can I do?
-Assistant: I'd recommend implementing Redis for caching frequently-accessed data, which should reduce your database load by 70-80%."
-
-Output fact:
-   - what: "Assistant recommended implementing Redis for caching frequently-accessed data to improve API performance"
-   - when: "March 5, 2024 during conversation"
-   - who: "user, assistant"
-   - why: "User asked how to fix slow API performance with 1000+ concurrent users, expected 70-80% reduction in database load"
-   - fact_type: "assistant", fact_kind: "conversation"
-   - entities: ["user", "API", "Redis"]
-
-Example 3 - Kitchen Items with Concept Inference (Event Date: Thursday, May 30, 2024):
-Input: "I finally donated my old coffee maker to Goodwill. I upgraded to that new espresso machine last month and the old one was just taking up counter space."
-
-Output fact:
-   - what: "User donated their old coffee maker to Goodwill after upgrading to a new espresso machine"
-   - when: "Thursday, May 30, 2024"
-   - who: "user"
-   - why: "The old coffee maker was taking up counter space after the upgrade"
-   - fact_type: "world", fact_kind: "event"
-   - occurred_start: "2024-05-30T00:00:00Z" (uses Event Date year)
-   - occurred_end: "2024-05-30T23:59:59Z" (same day - point event)
-   - entities: ["user", "coffee maker", "Goodwill", "espresso machine", "kitchen"]
-
-Note: "kitchen" is inferred as a concept because coffee makers and espresso machines are kitchen appliances.
-This links the fact to other kitchen-related facts (toaster, faucet, kitchen mat, etc.) via the shared "kitchen" entity.
-
-Note how the "why" field captures the FULL STORY: what the user asked AND what outcome was expected!
+例：“我喜欢意大利菜，而且更偏好露天就餐”
+→ 事实1：用户喜欢意大利菜（conversation）
+→ 事实2：用户更偏好露天就餐（conversation）
 
 ══════════════════════════════════════════════════════════════════════════
-WHAT TO EXTRACT vs SKIP
+entities（必须包含人物/地点/对象/概念）
 ══════════════════════════════════════════════════════════════════════════
+entities 用于把相关事实连起来。请尽量抽取：
+1) "user"（当事实与用户直接相关）
+2) 人名：Emily、Dr. Smith…
+3) 组织/地点：Google、New York…
+4) 具体对象：咖啡机、车、笔记本电脑…
+5) 抽象概念/主题（用于关联）：友谊、事业成长、失去/哀伤、庆祝、信任/背叛……
 
-✅ EXTRACT: User preferences (ALWAYS as separate facts!), feelings, plans, events, relationships, achievements
-❌ SKIP: Greetings, filler ("thanks", "cool"), purely structural statements"""
+示例：
+✅ “用户把咖啡机捐给 Goodwill” → ["user","coffee maker","Goodwill","厨房"]（如可推断）
+✅ “Emily 帮用户搬家” → ["user","Emily","friendship"]
+❌ 只抽取 ["user","Emily"]，漏掉能关联主题的概念
+
+══════════════════════════════════════════════════════════════════════════
+示例
+══════════════════════════════════════════════════════════════════════════
+示例1（world；事件日期：2024-06-10（周二））：
+输入：
+“我在筹备婚礼，想办一个小型的户外仪式。我刚参加完大学室友 Emily 的婚礼——她和 Sarah 在城市里的露台花园结婚，真的很浪漫！”
+
+输出（示意）：
+1) 用户婚礼偏好
+- what：用户想为自己的婚礼举办小型户外仪式
+- who："user"
+- why：体现用户偏好（亲密、户外、氛围）
+- fact_type="world", fact_kind="conversation"
+- entities：["user","婚礼","户外仪式"]
+
+2) 用户正在筹备婚礼
+- what：用户正在筹备自己的婚礼
+- who："user"
+- why：受 Emily 婚礼启发/对比（如文本体现）
+- fact_type="world", fact_kind="conversation"
+- entities：["user","婚礼"]
+
+3) Emily 的婚礼（event）
+- what：Emily 与 Sarah 在露台花园举办婚礼（包含关键细节）
+- when：相对 事件日期 解析为具体日期（含周X）
+- who：Emily（用户的大学室友），Sarah（Emily 的伴侣）
+- why：用户觉得浪漫、被打动（如文本体现）
+- fact_type="world", fact_kind="event"
+- occurred_start：ISO 时间戳
+- occurred_end：同日/同一时间戳
+- entities：["user","Emily","Sarah","婚礼","屋顶花园"]
+
+示例2（assistant；事件日期：2024-03-05（周二））：
+输入：
+用户：“我的 接口 在 1000+ 并发时很慢，怎么办？”
+助手：“建议用 Redis 缓存高频数据，预计能把数据库负载降低 70-80%。”
+
+输出（示意）：
+- what：助手建议使用 Redis 缓存高频访问数据以提升 接口 性能
+- when：2024-03-05（周二）对话中（如可写更细）
+- who："user, assistant"
+- why：用户询问如何解决 1000+ 并发下的性能问题，并希望显著降低数据库负载（70-80%）
+- fact_type="assistant", fact_kind="conversation"
+- entities：["user","接口","Redis"]
+
+示例3（物品与概念推断；事件日期：2024-05-30（周四））：
+输入：
+“我终于把旧的 coffee maker 捐给 Goodwill 了。我上个月换了新的 espresso machine，旧的只是在台面上占地方。”
+
+输出（示意）：
+- what：用户把旧的 coffee maker 捐给 Goodwill，因为上个月换了新的 espresso machine，旧的占用台面空间
+- when：2024-05-30（周四）
+- who："user"
+- why：升级后旧设备不再需要且占空间
+- fact_type="world", fact_kind="event"
+- occurred_start：ISO 时间戳（按 事件日期 年份）
+- occurred_end：同日
+- entities：["user","coffee maker","Goodwill","espresso machine","厨房"]
+
+══════════════════════════════════════════════════════════════════════════
+该抽取什么 / 该跳过什么
+══════════════════════════════════════════════════════════════════════════
+✅ 抽取：偏好（必须单独成事实）、情绪、计划、事件、关系、成就、重要背景
+❌ 跳过：寒暄、感谢、口头禅、纯结构性/无信息量的语句（“谢谢”“好的”“明白了”）"""
 
     import logging
 
@@ -552,15 +531,16 @@ WHAT TO EXTRACT vs SKIP
 
     # Build user message with metadata and chunk content in a clear format
     # Format event_date with day of week for better temporal reasoning
-    event_date_formatted = event_date.strftime("%A, %B %d, %Y")  # e.g., "Monday, June 10, 2024"
-    user_message = f"""Extract facts from the following text chunk.
+    weekday_cn = ["周一","周二","周三","周四","周五","周六","周日"][event_date.weekday()]
+    event_date_formatted = f"{event_date:%Y-%m-%d}（{weekday_cn}）"  # 例如："2024-06-10（周一）"
+    user_message = f"""请从以下文本块中抽取事实。
 {memory_bank_context}
 
-Chunk: {chunk_index + 1}/{total_chunks}
-Event Date: {event_date_formatted} ({event_date.isoformat()})
-Context: {sanitized_context}
+分块：{chunk_index + 1}/{total_chunks}
+事件日期：{event_date_formatted}（{event_date.isoformat()}）
+上下文：{sanitized_context}
 
-Text:
+文本：
 {sanitized_chunk}"""
 
     for attempt in range(max_retries):
@@ -661,10 +641,10 @@ Text:
                 combined_parts = [what]
 
                 if when:
-                    combined_parts.append(f"When: {when}")
+                    combined_parts.append(f"时间：{when}")
 
                 if who:
-                    combined_parts.append(f"Involving: {who}")
+                    combined_parts.append(f"涉及：{who}")
 
                 if why:
                     combined_parts.append(why)
