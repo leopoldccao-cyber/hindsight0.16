@@ -125,7 +125,6 @@ FROM python:3.11-slim AS api-only
 
 WORKDIR /app
 
-# Install pg0 dependencies (procps provides 'kill' command needed by pg0)
 # Note: libicu version varies by Debian version - try common versions in order
 RUN apt-get update && apt-get install -y \
     curl \
@@ -138,7 +137,6 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/* \
     && pip install --no-cache-dir uv
 
-# Create non-root user (PostgreSQL cannot run as root)
 RUN useradd -m -s /bin/bash hindsight
 
 # Copy API with virtual environment from builder
@@ -148,19 +146,11 @@ COPY --from=api-builder /app/api /app/api
 COPY docker/standalone/start-all.sh /app/start-all.sh
 RUN chmod +x /app/start-all.sh
 
-# Create data directory for pg0 and set ownership
-RUN mkdir -p /app/data && chown -R hindsight:hindsight /app
+RUN chown -R hindsight:hindsight /app
 
-# Switch to non-root user
 USER hindsight
 
-# Set PATH for hindsight user
 ENV PATH="/app/api/.venv/bin:${PATH}"
-
-# Pre-cache PostgreSQL binaries by starting/stopping pg0-embedded
-ENV PG0_HOME=/home/hindsight/.pg0-cache
-
-ENV PG0_HOME=/home/hindsight/.pg0
 
 # Pre-download ML models to avoid runtime download (conditional)
 ARG PRELOAD_ML_MODELS
@@ -226,7 +216,7 @@ FROM python:3.11-slim AS standalone
 
 WORKDIR /app
 
-# Install Node.js, curl, uv, and pg0 dependencies (procps provides 'kill' command needed by pg0)
+# Install Node.js, curl, uv, and system dependencies
 # Note: libicu version varies by Debian version - try common versions in order
 RUN apt-get update && apt-get install -y \
     curl \
@@ -241,7 +231,6 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/* \
     && pip install --no-cache-dir uv
 
-# Create non-root user (PostgreSQL cannot run as root)
 RUN useradd -m -s /bin/bash hindsight
 
 # Copy API with virtual environment from builder
@@ -262,26 +251,11 @@ WORKDIR /app
 COPY docker/standalone/start-all.sh /app/start-all.sh
 RUN chmod +x /app/start-all.sh
 
-# Create data directory for pg0 and set ownership
-RUN mkdir -p /app/data && chown -R hindsight:hindsight /app
+RUN chown -R hindsight:hindsight /app
 
-# Switch to non-root user
 USER hindsight
 
-# Set PATH for hindsight user
 ENV PATH="/app/api/.venv/bin:${PATH}"
-
-# Pre-cache PostgreSQL binaries by starting/stopping pg0-embedded
-ENV PG0_HOME=/home/hindsight/.pg0-cache
-RUN /app/api/.venv/bin/python -c "\
-from pg0 import Pg0; \
-print('Pre-caching PostgreSQL binaries...'); \
-pg = Pg0(name='hindsight', port=5555, username='hindsight', password='hindsight', database='hindsight'); \
-pg.start(); \
-pg.stop(); \
-print('PostgreSQL pre-cached to PG0_HOME')" || echo "Pre-download skipped"
-
-ENV PG0_HOME=/home/hindsight/.pg0
 
 # Pre-download ML models to avoid runtime download (conditional)
 ARG PRELOAD_ML_MODELS

@@ -12,6 +12,7 @@
     Do not edit the class manually.
 """  # noqa: E501
 
+
 # import models into model package
 from hindsight_client_api.models.add_background_request import AddBackgroundRequest
 from hindsight_client_api.models.background_response import BackgroundResponse
@@ -31,6 +32,7 @@ from hindsight_client_api.models.disposition_traits import DispositionTraits
 from hindsight_client_api.models.document_response import DocumentResponse
 from hindsight_client_api.models.entity_detail_response import EntityDetailResponse
 from hindsight_client_api.models.entity_include_options import EntityIncludeOptions
+from hindsight_client_api.models.entity_input import EntityInput
 from hindsight_client_api.models.entity_list_item import EntityListItem
 from hindsight_client_api.models.entity_list_response import EntityListResponse
 from hindsight_client_api.models.entity_observation_response import EntityObservationResponse
@@ -55,4 +57,3 @@ from hindsight_client_api.models.retain_response import RetainResponse
 from hindsight_client_api.models.update_disposition_request import UpdateDispositionRequest
 from hindsight_client_api.models.validation_error import ValidationError
 from hindsight_client_api.models.validation_error_loc_inner import ValidationErrorLocInner
-

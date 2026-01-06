@@ -20,6 +20,7 @@ import json
 from datetime import datetime
 from pydantic import BaseModel, ConfigDict, StrictStr
 from typing import Any, ClassVar, Dict, List, Optional
+from hindsight_client_api.models.entity_input import EntityInput
 from typing import Optional, Set
 from typing_extensions import Self
 
@@ -32,7 +33,8 @@ class MemoryItem(BaseModel):
     context: Optional[StrictStr] = None
     metadata: Optional[Dict[str, StrictStr]] = None
     document_id: Optional[StrictStr] = None
-    __properties: ClassVar[List[str]] = ["content", "timestamp", "context", "metadata", "document_id"]
+    entities: Optional[List[EntityInput]] = None
+    __properties: ClassVar[List[str]] = ["content", "timestamp", "context", "metadata", "document_id", "entities"]
 
     model_config = ConfigDict(
         populate_by_name=True,
@@ -73,6 +75,13 @@ class MemoryItem(BaseModel):
             exclude=excluded_fields,
             exclude_none=True,
         )
+        # override the default output from pydantic by calling `to_dict()` of each item in entities (list)
+        _items = []
+        if self.entities:
+            for _item_entities in self.entities:
+                if _item_entities:
+                    _items.append(_item_entities.to_dict())
+            _dict['entities'] = _items
         # set to None if timestamp (nullable) is None
         # and model_fields_set contains the field
         if self.timestamp is None and "timestamp" in self.model_fields_set:
@@ -93,6 +102,11 @@ class MemoryItem(BaseModel):
         if self.document_id is None and "document_id" in self.model_fields_set:
             _dict['document_id'] = None
 
+        # set to None if entities (nullable) is None
+        # and model_fields_set contains the field
+        if self.entities is None and "entities" in self.model_fields_set:
+            _dict['entities'] = None
+
         return _dict
 
     @classmethod
@@ -109,7 +123,8 @@ class MemoryItem(BaseModel):
             "timestamp": obj.get("timestamp"),
             "context": obj.get("context"),
             "metadata": obj.get("metadata"),
-            "document_id": obj.get("document_id")
+            "document_id": obj.get("document_id"),
+            "entities": [EntityInput.from_dict(_item) for _item in obj["entities"]] if obj.get("entities") is not None else None
         })
         return _obj
 

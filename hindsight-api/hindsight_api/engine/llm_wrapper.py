@@ -6,6 +6,7 @@ import asyncio
 import json
 import logging
 import os
+import re
 import time
 from typing import Any
 
@@ -18,6 +19,7 @@ from openai import APIConnectionError, APIStatusError, AsyncOpenAI, LengthFinish
 from ..config import (
     DEFAULT_LLM_MAX_CONCURRENT,
     DEFAULT_LLM_TIMEOUT,
+    ENV_LLM_GROQ_SERVICE_TIER,
     ENV_LLM_MAX_CONCURRENT,
     ENV_LLM_TIMEOUT,
 )
@@ -62,6 +64,7 @@ class LLMProvider:
         base_url: str,
         model: str,
         reasoning_effort: str = "low",
+        groq_service_tier: str | None = None,
     ):
         """
         Initialize LLM provider.
@@ -72,12 +75,15 @@ class LLMProvider:
             base_url: Base URL for the API.
             model: Model name.
             reasoning_effort: Reasoning effort level for supported providers.
+            groq_service_tier: Groq service tier ("on_demand", "flex", "auto"). Default: None (uses Groq's default).
         """
         self.provider = provider.lower()
         self.api_key = api_key
         self.base_url = base_url
         self.model = model
         self.reasoning_effort = reasoning_effort
+        # Default to 'auto' for best performance, users can override to 'on_demand' for free tier
+        self.groq_service_tier = groq_service_tier or os.getenv(ENV_LLM_GROQ_SERVICE_TIER, "auto")
 
         # Validate provider
         valid_providers = ["openai", "groq", "ollama", "gemini", "anthropic", "lmstudio"]
@@ -262,11 +268,15 @@ class LLMProvider:
             # Provider-specific parameters
             if self.provider == "groq":
                 call_params["seed"] = DEFAULT_LLM_SEED
-                extra_body = {"service_tier": "auto"}
-                # Only add reasoning parameters for reasoning models
+                extra_body: dict[str, Any] = {}
+                # Add service_tier if configured (requires paid plan for flex/auto)
+                if self.groq_service_tier:
+                    extra_body["service_tier"] = self.groq_service_tier
+                # Add reasoning parameters for reasoning models
                 if is_reasoning_model:
                     extra_body["include_reasoning"] = False
-                call_params["extra_body"] = extra_body
+                if extra_body:
+                    call_params["extra_body"] = extra_body
 
             last_exception = None
 
@@ -300,6 +310,8 @@ class LLMProvider:
                                         schema_msg + "\n\n" + call_params["messages"][0]["content"]
                                     )
                             if self.provider not in ("lmstudio", "ollama"):
+                                # LM Studio and Ollama don't support json_object response format reliably
+                                # We rely on the schema in the system message instead
                                 call_params["response_format"] = {"type": "json_object"}
 
                         logger.debug(f"Sending request to {self.provider}/{self.model} (timeout={self.timeout})")
@@ -307,6 +319,19 @@ class LLMProvider:
                         logger.debug(f"Received response from {self.provider}/{self.model}")
 
                         content = response.choices[0].message.content
+
+                        # Strip reasoning model thinking tags
+                        # Supports: <think>, <thinking>, <reasoning>, |startthink|/|endthink|
+                        # for reasoning models that embed thinking in their output (e.g., Qwen3, DeepSeek)
+                        if content:
+                            original_len = len(content)
+                            content = re.sub(r"<think>.*?</think>", "", content, flags=re.DOTALL)
+                            content = re.sub(r"<thinking>.*?</thinking>", "", content, flags=re.DOTALL)
+                            content = re.sub(r"<reasoning>.*?</reasoning>", "", content, flags=re.DOTALL)
+                            content = re.sub(r"\|startthink\|.*?\|endthink\|", "", content, flags=re.DOTALL)
+                            content = content.strip()
+                            if len(content) < original_len:
+                                logger.debug(f"Stripped {original_len - len(content)} chars of reasoning tokens")
 
                         # For local models, they may wrap JSON in markdown code blocks
                         if self.provider in ("lmstudio", "ollama"):
